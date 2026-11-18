@@ -1,0 +1,9 @@
+{
+  "arm": "lora",
+  "title": "Draft-LoRA 全词表蒸馏",
+  "modes": [
+    "raw",
+    "lora"
+  ],
+  "default_loss": "equal"
+}
