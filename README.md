@@ -25,6 +25,8 @@ inputs/
   rosters/development.jsonl
 ```
 
+原机的模型目录是 `/data/transfer_from_4090/models`，模型清单是 `/data/task59-a100-closedloop-20261114-v1/models.json`，训练索引来自 `/data/a100-repair-raw5000-20261113-v1/index.jsonl`，RAW 来自 `/data/a100-ultrachat5000-vanilla-20261111-7858dc6a/shards`。开发题单使用已交付的 `historical200_dev_replay_roster.jsonl`，按原字节复制。也可以从原机的 `task62-20261118-cpu-coverage/inputs` 下取得同一个文件。
+
 训练使用 RAW 实际起草路径上的教师分布。`collect` 用大模型对完全相同的前缀取分布，做全词表回放核验，再逐分片写入 4096 维 BF16 向量。两个实验可以共用同一份教师缓存。同一处缓存只允许一个采集者写入。用不同的 `--out` 保存各实验和各损失配置。重新以同一配置执行时，从最近封存的分片、训练断点或已评估请求继续。
 
 在同一台机器同时使用多个实验仓库时，应传入同一个 `--gpu-lock`，由它协调这张卡。第二台独立机器可用默认的本机锁。需要从多台机器共用教师缓存时，挂载目录需支持可靠的文件锁。
@@ -39,15 +41,18 @@ inputs/
 set -e
 run() {
   python experiment.py "$@" --assets /mnt/spec-inputs --out /srv/spec-runs/lora \
-    --teacher-cache /srv/spec-runs/shared-teacher-exact --loss equal
+    --teacher-cache /srv/spec-runs/shared-teacher-exact --loss "$loss"
 }
-run smoke
-run parity
-run collect
-run train
-run eval --mode raw
-run eval --mode lora
-run fixed --mode raw
-run fixed --mode lora
-run compare
+for loss in equal front; do
+  run smoke
+  run parity
+  if [ "$loss" = equal ]; then run collect; fi
+  run train
+  run eval --mode raw
+  run eval --mode lora
+  run fixed --mode raw
+  run fixed --mode lora
+  run compare
+done
+python compare_losses.py --out /srv/spec-runs/lora
 ```
