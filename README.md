@@ -25,7 +25,7 @@ inputs/
   rosters/development.jsonl
 ```
 
-原机的模型目录是 `/data/transfer_from_4090/models`，模型清单是 `/data/task59-a100-closedloop-20261114-v1/models.json`，训练索引来自 `/data/a100-repair-raw5000-20261113-v1/index.jsonl`，RAW 来自 `/data/a100-ultrachat5000-vanilla-20261111-7858dc6a/shards`。开发题单使用已交付的 `historical200_dev_replay_roster.jsonl`，按原字节复制。也可以从原机的 `task62-20261118-cpu-coverage/inputs` 下取得同一个文件。
+原机的模型目录是 `/data/transfer_from_4090/models`，模型清单是 `/data/task59-a100-closedloop-20261114-v1/models.json`，训练索引来自 `/data/a100-repair-raw5000-20261113-v1/index.jsonl`，RAW 来自 `/data/a100-ultrachat5000-vanilla-20261111-7858dc6a/shards`。开发题单使用本仓库 `inputs/development_a100_target_roster.jsonl`，按原字节复制到挂载目录的 `rosters/development.jsonl`。其 SHA256 是 `690b30ee136157a2ce02d046f9b01d4c45eb6d08f91b6a022c4c51d7f5b6427e`。同200个历史题目已在当前 A100 的原生 Target 入口重新独立生成答案，共24,810个 token；其中113题与旧4090答案不同。题单只用于开发评估，训练继续用独立的 RAW 训练前缀。采集来源和封存摘要见 `inputs/a100_target_tape_receipt.json` 与 manifest。更换模型或运行环境后，先在本机原生 Target 入口完成答案对账，再比较各组。
 
 训练使用 RAW 实际起草路径上的教师分布。`collect` 用大模型对完全相同的前缀取分布，再逐分片保存 4096 维 BF16 隐藏向量。全前缀投影和单行投影产生 BF16 舍入差异时，缓存额外保存不同位置的原生 logit 值。训练重建后核对整行 SHA，逐值复现原生 Target 分布。差异稠密时改存完整原生向量。`smoke.json` 记录实际差异项数和编码。缓存大小按实际分片测量。两个实验共用一份教师缓存，同一缓存只允许一个采集者写入。用不同的 `--out` 保存各实验和各损失配置。重新以同一配置执行时，从最近封存的分片、训练断点或已评估请求继续。
 
