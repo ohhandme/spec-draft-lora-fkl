@@ -276,6 +276,11 @@ def native_request_eval(cfg, decode, target, draft, request, slot=None, mode="ra
 def compare(cfg, cfg_sha, root):
     roster = {r["request_id"]: r for r in jsonl(cfg["development_roster"])}
     rows, stats = read_eval(root / "development-lora", cfg_sha, roster, "lora", "development", "lora")
+    terminal = read_json(root / "completion.json")
+    require(terminal["status"] == "complete" and terminal["config_sha256"] == cfg_sha
+            and terminal["arm"] == "lora" and stats["checkpoint_sha256"] == terminal["checkpoint_sha256"],
+            "evaluation checkpoint differs from selected training checkpoint")
+    checked_file(root / "last.pt", terminal["checkpoint_sha256"])
     for rid, record in rows.items():
         validate_rounds(record, roster[rid]["expected_target_token_ids"], cfg)
     candidate = {rid: (row["accepted_draft_tokens"], row["verification_rounds"]) for rid, row in rows.items()}

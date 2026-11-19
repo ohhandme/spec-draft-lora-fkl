@@ -22,7 +22,7 @@
     "program62_run.py": "87d953c0fa186784b234b10a633470ab361daacffc7d55b1e5c79d43776fbf96",
     "program62_compare.py": "8fe662c363c637bcff2bc95af51a06d30c41b11ef0b39af8dbd8e5659e51ca7c",
     "rollout_coverage.py": "94ee21605b3516dc6c47012701e7b8cc0b0570a1ac712f6c27f5bfadeea6da5d",
-    "ce_existing_data.py": "bc415352a3c4e973db212749f3e9eae4c653b7d4de988ea2cf56a62be78bc07f"
+    "ce_existing_data.py": "c9c0efd4e0b7712d88049f3c358ede0983d2a0a6b5039b2c24d87cb9c9a22643"
   },
   "objective": "saved_target_tokens_CE",
   "forbid_teacher_acquisition": true,
