@@ -1,0 +1,31 @@
+{
+  "source_archive_sha256": "5ec668e50b2c4e41923f463692649092c036a922a05285e911159df8aeb52fe4",
+  "source_freeze_sha256": "da8dfba8f96252621669c8883470ee3d4b108204dec5b1937e9d8be986f4df95",
+  "source_roster_sha256": "576c46525d252bfeeb108206f0197b27d8aa27e923205cbec738c0e2f5b6326c",
+  "roster_sha256": "a75803ceae25fcf21a4ae42cb87470bca375096d9e0676ed52645a727ae4a836",
+  "raw_samples_sha256": "76f43d4c5f44038afac9bcba4249f15d8417b55e4d00cb3bb66f727e81726d79",
+  "requests": 503,
+  "baseline_totals": {
+    "RAW": [
+      42879,
+      20239
+    ],
+    "mlp1_w256_equal": [
+      43586,
+      19533
+    ],
+    "mlp1_w256_front": [
+      43533,
+      19585
+    ],
+    "transformer1_w64_equal": [
+      43617,
+      19497
+    ],
+    "transformer1_w64_front": [
+      43523,
+      19591
+    ]
+  },
+  "scope": "Existing A100503 development data and original sealed results; no new Target labels. First4 paired heads batch32,5epochs,24485updates."
+}

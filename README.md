@@ -1,58 +1,44 @@
-# Draft-LoRA 全词表蒸馏
+# Draft内部LoRA：复用现有5000条数据
 
-只训练原 Draft 的 q_proj 和 v_proj 的 rank-8、alpha-16 LoRA。评估从第一轮启用 LoRA，并和原 Draft 比较。
+当前执行入口是 `ce_existing_data.py`。目标是比较冻结Draft加修复头，与在Draft的q_proj/v_proj内部学习LoRA增量、直接改变起草分布。训练只读已保存的目标token，不采集新的Target分布；历史FKL入口见 `README_fkl_legacy.md`，不在当前排程执行。
 
-## 在独立 A100 上运行
+## 输入和训练预算
 
-使用 Linux、Python 3.11+ 和与机器 CUDA 驱动匹配的 PyTorch。其余依赖安装命令如下。先在 CPU 夹具上验证入口，再用目标机器的实际权重执行 `smoke` 和 200 题对账。
+挂载原有模型清单和权重、RAW5000派生的训练索引：
+
+```text
+/mnt/spec-inputs/
+  models.json
+  weights/Qwen3-0.6B/
+  weights/Qwen3-8B/
+  train/index.jsonl
+```
+
+索引SHA256锁为 `6b8797ea5155e4fd9bd01474fd3c669e6902e2025b5723e03e2a5faf311c3ff6`。训练3986请求、156688个既有窗口；校准503请求、19736窗口。标签直接读窗口中原有的Target token，实际前驱是对应的已确认参考序列。训练需要重新计算Draft前向以传播到内部LoRA，不能把冻结Draft的旧隐藏量当作可微训练输入；这一步没有Target模型或新教师标签。
+
+两臂分别用每位等权和8→1前位权。每窗口按其有效位置权重和归一，再对32窗口取平均。分组microbatch累积同一个32窗口均值，末批按实际窗口数归一。两臂seed42、q/v LoRA rank8 alpha16、AdamW lr1e-4/weight_decay0.01、5个epoch，每臂24485次优化更新，样本与标签暴露预算相同。梯度只检查有限性，不截断，与原first4头的规则相同。
+
+该预算对齐已有first4 MLP/单层Transformer CE头的32窗、5epoch条件。它与后来batch1的783440更新矩阵不是同一个优化器预算。LoRA与修复头的反馈输入、参数量仍有差别，结果回答两套方案在这套训练条件下哪个更有效，不是单一容量变量的比较。
+
+## 检查和执行
 
 ```bash
 python -m pip install -r requirements.txt
-python cpu_smoke.py
-```
-
-把以下已核对的输入放在一个挂载目录内。路径可以是软链接。训练索引、模型清单、模型文件和开发题单按 `candidate.json` 对应哈希验证。原 RAW 分片按各分片的收据逐份校验。
-
-```text
-inputs/
-  models.json
-  weights/Qwen3-8B/
-  weights/Qwen3-0.6B/
-  train/index.jsonl
-  raw/shards/<request_id>/trace.json
-  raw/shards/<request_id>/receipt.json
-  raw/shards/<request_id>/features.safetensors
-  rosters/development.jsonl
-```
-
-原机的模型目录是 `/data/transfer_from_4090/models`，模型清单是 `/data/task59-a100-closedloop-20261114-v1/models.json`，训练索引来自 `/data/a100-repair-raw5000-20261113-v1/index.jsonl`，RAW 来自 `/data/a100-ultrachat5000-vanilla-20261111-7858dc6a/shards`。开发题单使用本仓库 `inputs/development_a100_target_roster.jsonl`，按原字节复制到挂载目录的 `rosters/development.jsonl`。其 SHA256 是 `690b30ee136157a2ce02d046f9b01d4c45eb6d08f91b6a022c4c51d7f5b6427e`。同200个历史题目已在当前 A100 的原生 Target 入口重新独立生成答案，共24,810个 token；其中113题与旧4090答案不同。题单只用于开发评估，训练继续用独立的 RAW 训练前缀。采集来源和封存摘要见 `inputs/a100_target_tape_receipt.json` 与 manifest。更换模型或运行环境后，先在本机原生 Target 入口完成答案对账，再比较各组。
-
-训练使用 RAW 实际起草路径上的教师分布。`collect` 用大模型对完全相同的前缀取分布，再逐分片保存 4096 维 BF16 隐藏向量。全前缀投影和单行投影产生 BF16 舍入差异时，缓存额外保存不同位置的原生 logit 值。训练重建后核对整行 SHA，逐值复现原生 Target 分布。差异稠密时改存完整原生向量。`smoke.json` 记录实际差异项数和编码。缓存大小按实际分片测量。两个实验共用一份教师缓存，同一缓存只允许一个采集者写入。用不同的 `--out` 保存各实验和各损失配置。重新以同一配置执行时，从最近封存的分片、训练断点或已评估请求继续。
-
-在同一台机器同时使用多个实验仓库时，应传入同一个 `--gpu-lock`，由它协调这张卡。第二台独立机器可用默认的本机锁。需要从多台机器共用教师缓存时，挂载目录需支持可靠的文件锁。
-
-支持 `--loss equal` 和 `--loss front`。前者每个有效位置同权，后者从第一草稿位置到第八位置依次用 8 到 1，分母是同一优化步中有效位置的权重和。相同种子、训练数据、初始参数和训练预算用于两种权重，运行目录按损失分开。一次先跑一个配置，检验加权收益时用另一套独立目录重复命令。
-
-各组最终输出和封存 Target token 对齐。`compare` 从逐轮记录复算总接受 token 除以总 Target 验证轮，并给出按题族配对重采样的区间、固定前缀连续接受和计时。历史 200 题用于开发比较。优先先验证实际 A100 上的 BF16 路径，再用与训练和开发按题族隔离的题做确认。
-
-## 启动命令
-
-```bash
-set -e
-run() {
-  python experiment.py "$@" --assets /mnt/spec-inputs --out /srv/spec-runs/lora \
-    --teacher-cache /srv/spec-runs/shared-teacher-exact --loss "$loss"
-}
+python cpu_ce_smoke.py
 for loss in equal front; do
-  run smoke
-  run parity
-  if [ "$loss" = equal ]; then run collect; fi
-  run train
-  run eval --mode raw
-  run eval --mode lora
-  run fixed --mode raw
-  run fixed --mode lora
-  run compare
+  python ce_existing_data.py smoke --assets /mnt/spec-inputs --out /srv/spec-runs/lora-ce --loss "$loss"
+  python ce_existing_data.py train --assets /mnt/spec-inputs --out /srv/spec-runs/lora-ce --loss "$loss"
+  python ce_existing_data.py eval --assets /mnt/spec-inputs --out /srv/spec-runs/lora-ce --loss "$loss"
+  python ce_existing_data.py compare --assets /mnt/spec-inputs --out /srv/spec-runs/lora-ce --loss "$loss"
 done
-python compare_losses.py --out /srv/spec-runs/lora
 ```
+
+同一机器的所有入口传同一个 `--gpu-lock`。原机用 `/data/a100-first-rejection-20261111-9b21f68f/a1_gpu.lock`。先停止并退役旧的教师采集监督器，保留已有分片，再登记本入口；不要同时跑旧collect队列。
+
+`smoke`只加载0.6B Draft，用现有503题中的3条原始RAW轨迹核对native与零LoRA候选，并执行一次现成标签的梯度更新。`train`也只加载Draft；断点记录窗口位置、优化器、总监督token和训练历史，可从已保存更新恢复。等权和前位权共享同一初始化与epoch顺序。训练结束按各自窗口权重的503请求等权校准CE选一个checkpoint。
+
+## 结果口径
+
+`inputs/development503_existing.jsonl`由已封存的A100503原件派生，包含原有prompt、Target答案和RAW/first4头逐题计数；来源见 `inputs/existing503_source.json`。不重新生成答案。评估使用原生 `draft.next(prefix,None,position)`，Target仅执行正常的推理验证，oracle断言保留。`compare`从LoRA逐轮原件复算接受数/验证轮，和已有同题RAW及对应权重的CE头作题族配对bootstrap。
+
+503题用于开发和校准，不能写成独立确认。历史RAW耗时也不能充当新的同步测速对照；当前报告包含LoRA实际耗时，不据此单独宣称端到端加速。
